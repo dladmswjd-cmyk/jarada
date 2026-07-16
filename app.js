@@ -16,6 +16,19 @@ const HEART_PER_TASK    = 1;    // FR-2.1 할 일 1개 완료당
 const HEART_ALL_CLEAR   = 10;   // FR-2.2 하루 100% 완주 보너스
 const HEART_FROM_PARENT = 5;    // FR-3.1 학부모 보너스 하트
 
+/* ── 매일 자동으로 생기는 기본 약속 (반 전체 공통) ──────────────
+   학생이 아침에 앱을 열면 그날 약속이 이 목록대로 자동 생성됩니다.
+
+   ✏️ 약속을 바꾸려면 여기만 고치면 됩니다. 개수는 몇 개든 상관없습니다.
+   ⚠️ 이미 지나간 날짜에는 소급 적용되지 않습니다.
+   ⚠️ 학생이 지운 약속은 그날 다시 생기지 않습니다.
+   ───────────────────────────────────────────────────────────── */
+const DAILY_TASKS = [
+  '리딩앤 1권 하기',
+  '마타수학 1일치 하기',
+  '매일국어 1일치 하기',
+];
+
 // FR-2.3 캐릭터 진화 테이블 (누적 하트 H 기준)
 const LEVELS = [
   { min: 0,   emoji: '🥚', title: '아기 씨앗' },
@@ -50,10 +63,12 @@ function currentLabel() {
 
 let state = {
   // ── 서버에 저장되는 데이터 ──
-  tasks:      {},   // { "2026-07-15": [{id, text, done}, ...] }
+  tasks:      {},   // { "2026-07-16": [{id, text, done}, ...] }
   hearts:     0,
   stickers:   0,
-  celebrated: {},   // { "2026-07-15": true } — 폭죽 중복 방지
+  celebrated: {},   // { "2026-07-16": true } — 폭죽 중복 방지
+  seeded:     {},   // { "2026-07-16": true } — 기본 약속을 넣어준 날 표시
+                    //   이게 있어야 학생이 지운 약속이 되살아나지 않습니다
 
   // ── 이 기기에만 있는 화면 상태 (서버에 올리지 않습니다) ──
   selectedDate: todayKey,
@@ -169,11 +184,31 @@ function applyServerData(d) {
   state.stickers   = (d && d.stickers) || 0;
   state.tasks      = normalizeTasks(d && d.tasks);
   state.celebrated = (d && d.celebrated) || {};
+  state.seeded     = (d && d.seeded)     || {};
 
   // 저장된 할 일 중 가장 큰 id 다음부터 이어서 발급
   Object.values(state.tasks).flat().forEach(t => {
     if (t.id >= nextId) nextId = t.id + 1;
   });
+}
+
+/* 그날 기본 약속을 아직 안 넣었으면 넣어줍니다.
+   저장이 필요하면 true 를 돌려줍니다.
+
+   ⚠️ seeded 표시가 핵심입니다. 이게 없으면 학생이 약속을 다 지웠을 때
+      Firebase 가 빈 배열을 지워버려서 "약속이 없는 날"로 보이고,
+      다음에 앱을 열 때마다 지운 약속이 계속 되살아납니다. */
+function ensureDailyTasks(key) {
+  if (state.seeded[key]) return false;          // 이미 넣어준 날
+
+  if ((state.tasks[key] || []).length) {        // 학생이 직접 적어둔 게 있으면
+    state.seeded[key] = true;                   // 건드리지 않고 표시만
+    return true;
+  }
+
+  state.tasks[key] = DAILY_TASKS.map(text => ({ id: nextId++, text, done: false }));
+  state.seeded[key] = true;
+  return true;
 }
 
 function save() {
@@ -285,7 +320,7 @@ function renderTodos() {
     box.innerHTML = `
       <div class="h-full flex flex-col items-center justify-center text-center text-slate-300 gap-1">
         <div class="text-3xl">🗓️</div>
-        <div class="text-xs">아직 약속이 없어요<br>아래에 오늘 할 일을 적어보세요</div>
+        <div class="text-xs">이 날은 약속이 없어요<br>아래에 직접 적어볼 수 있어요</div>
       </div>`;
     return;
   }
@@ -578,12 +613,12 @@ function initStudentApp() {
   // 서버가 바뀌면(=교사가 하트를 보내면) 이 함수가 저절로 다시 불립니다.
   let first = true;
   dbWatchStudent(user.id, (data) => {
-    if (first && !data) {           // 처음 온 학생이면 예시 할 일을 넣어줍니다
-      first = false;
-      seedNewStudent();
-      return;                       // save() 가 다시 이 콜백을 부릅니다
-    }
     applyServerData(data);
+
+    // 오늘 약속이 아직 없으면 자동으로 만들어 줍니다.
+    // 저장하면 이 콜백이 한 번 더 불리지만, seeded 표시 덕분에 두 번 만들지 않습니다.
+    if (ensureDailyTasks(todayKey)) save();
+
     if (first) {
       first = false;
       lastLevelIndex = getLevelIndex();   // 첫 화면에서 축하가 뜨지 않도록
@@ -600,14 +635,3 @@ function initStudentApp() {
   });
 }
 
-function seedNewStudent() {
-  state.tasks = {
-    [todayKey]: [
-      { id: 1, text: '수학 문제집 3장 풀기', done: false },
-      { id: 2, text: '책 20분 읽기',        done: false },
-      { id: 3, text: '자기 전 양치하기',     done: false },
-    ],
-  };
-  nextId = 4;
-  save();
-}

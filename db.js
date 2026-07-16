@@ -134,6 +134,7 @@ function dbSaveStudent(id, name, num, data) {
     stickers:   data.stickers   || 0,
     tasks:      data.tasks      || {},
     celebrated: data.celebrated || {},
+    seeded:     data.seeded     || {},   // 기본 약속을 이미 넣어준 날짜 표시
     updatedAt:  Date.now(),
   });
 }
