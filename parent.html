@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🌱 자라다 — 선생님/학부모용</title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="theme.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="db.js"></script>
+</head>
+
+<body class="bg-beige font-sans text-slate-800 min-h-screen">
+
+<!-- ══════════ 헤더 ══════════ -->
+<header class="max-w-5xl mx-auto px-6 pt-7 pb-5 flex items-center justify-between">
+  <div>
+    <h1 class="text-2xl font-extrabold tracking-tight">🌱 자라다 <span class="text-slate-300 font-medium">선생님용</span></h1>
+    <p class="text-sm text-slate-400 mt-0.5">잔소리 대신 칭찬을 보내주세요</p>
+  </div>
+  <button id="sound-btn" onclick="toggleSound()"
+          class="text-sm bg-white border border-slate-200 rounded-full px-4 py-2 shadow-sm hover:border-mint transition">
+    🔊 소리 켬
+  </button>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 pb-14">
+
+  <div id="setup-slot"></div>
+
+  <!-- ══════════ ① 현황판 ══════════ -->
+  <section id="dashboard">
+
+    <!-- 오늘 요약 -->
+    <div class="grid grid-cols-3 gap-3 mb-6">
+      <div class="bg-white border border-slate-200 rounded-2xl p-4 text-center shadow-sm">
+        <div class="text-[11px] font-bold text-slate-400 mb-1">등록 학생</div>
+        <div id="sum-total" class="text-2xl font-extrabold">0명</div>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-2xl p-4 text-center shadow-sm">
+        <div class="text-[11px] font-bold text-slate-400 mb-1">오늘 완주</div>
+        <div id="sum-done" class="text-2xl font-extrabold text-mint">0명</div>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-2xl p-4 text-center shadow-sm">
+        <div class="text-[11px] font-bold text-slate-400 mb-1">평균 달성률</div>
+        <div id="sum-avg" class="text-2xl font-extrabold">0%</div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-1.5 mb-3 text-xs font-bold text-slate-400">
+      <span class="w-1.5 h-1.5 rounded-full bg-mint animate-pulse"></span>
+      실시간 · 카드를 누르면 그 아이에게 칭찬을 보낼 수 있어요
+    </div>
+
+    <!-- 학생 카드 — 인원수는 코드 어디에도 없습니다. 서버에 있는 만큼 그립니다 -->
+    <div id="student-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3"></div>
+  </section>
+
+  <!-- ══════════ ② 상세 (카드 클릭 시) ══════════ -->
+  <section id="detail" class="hidden flex flex-col gap-8 items-center">
+
+    <button onclick="backToDashboard()"
+            class="self-start text-sm bg-white border border-slate-200 rounded-full px-4 py-2
+                   shadow-sm hover:border-mint transition">
+      ← 전체 현황판으로
+    </button>
+
+    <!-- 아이 화면 실시간 미리보기 (PRD 2.2 모니터링) -->
+    <div class="flex flex-col items-center">
+      <div class="flex items-center gap-1.5 mb-3 text-xs font-bold text-slate-400">
+        <span class="w-1.5 h-1.5 rounded-full bg-mint animate-pulse"></span>
+        아이 화면 (실시간)
+      </div>
+      <div id="phone-mount"></div>
+    </div>
+
+    <!-- 제어판 (FR-3) -->
+    <div class="w-full max-w-[400px] bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="text-xl">👨‍👩‍👧</span>
+        <h2 class="font-bold text-lg"><span id="p-target">학생</span> 님에게 보내기</h2>
+      </div>
+      <p class="text-xs text-slate-400 mb-6">보내는 즉시 그 아이의 기기에 나타나요</p>
+
+      <!-- FR-3.1 칭찬 스티커 / 보너스 하트 -->
+      <div class="grid grid-cols-2 gap-3 mb-7">
+        <button onclick="sendSticker()"
+                class="bg-amber-50 border border-amber-200 rounded-2xl py-4 hover:bg-amber-100 active:scale-95 transition">
+          <div class="text-3xl mb-1">🌟</div>
+          <div class="text-xs font-bold text-amber-700">칭찬 스티커</div>
+        </button>
+        <button onclick="sendBonusHeart()"
+                class="bg-rose-50 border border-rose-200 rounded-2xl py-4 hover:bg-rose-100 active:scale-95 transition">
+          <div class="text-3xl mb-1">❤️</div>
+          <div class="text-xs font-bold text-pink">보너스 하트 +5</div>
+        </button>
+      </div>
+
+      <!-- FR-3.2 커스텀 응원 메시지 -->
+      <label class="block text-sm font-bold mb-2">응원 메시지 보내기</label>
+      <textarea id="msg-input" rows="3" maxlength="60"
+                placeholder="오늘도 정말 대단했어! 💚"
+                class="w-full border border-slate-200 rounded-2xl p-3 text-sm resize-none
+                       focus:outline-none focus:border-mint focus:ring-2 focus:ring-mint/20"></textarea>
+
+      <div class="flex flex-wrap gap-1.5 mt-3 mb-3">
+        <button onclick="fillMsg('오늘도 최고였어! 👏')" class="text-xs bg-slate-100 hover:bg-mint hover:text-white rounded-full px-3 py-1.5 transition">오늘도 최고였어! 👏</button>
+        <button onclick="fillMsg('조금만 더 힘내자 💪')" class="text-xs bg-slate-100 hover:bg-mint hover:text-white rounded-full px-3 py-1.5 transition">조금만 더 힘내자 💪</button>
+        <button onclick="fillMsg('선생님이 응원해 💚')" class="text-xs bg-slate-100 hover:bg-mint hover:text-white rounded-full px-3 py-1.5 transition">선생님이 응원해 💚</button>
+      </div>
+
+      <button onclick="sendMessage()"
+              class="w-full bg-mint hover:bg-mintDk active:scale-[0.98] text-white font-bold rounded-2xl py-3 transition shadow-sm">
+        메시지 보내기
+      </button>
+
+      <hr class="my-6 border-slate-100">
+
+      <!-- 현황 요약 -->
+      <div class="text-sm space-y-2">
+        <div class="flex justify-between"><span class="text-slate-400">누적 하트</span>      <span id="p-hearts"   class="font-bold">0</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">받은 칭찬 스티커</span><span id="p-stickers" class="font-bold">0</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">완주한 날</span>      <span id="p-days"     class="font-bold">0일</span></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ⚠️ 스크립트는 DOM 이 만들어진 뒤에 실행돼야 하므로 반드시 body 맨 끝에 둡니다 -->
+<script src="app.js"></script>
+<script src="parent.js"></script>
+<script>
+  initParentApp();
+</script>
+</body>
+</html>
